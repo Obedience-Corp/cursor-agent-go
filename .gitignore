@@ -1,0 +1,21 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+
+# Coverage / tooling
+coverage.out
+coverage.html
+.gomodproxy/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local secrets
+.env
+.env.*
+!.env.example
