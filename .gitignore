@@ -19,3 +19,6 @@ coverage.html
 .env
 .env.*
 !.env.example
+
+# Mock binary output
+/test/mockagent/bin/

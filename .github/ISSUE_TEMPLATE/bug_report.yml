@@ -1,0 +1,55 @@
+name: Bug report
+description: Report reproducible SDK behavior that appears incorrect.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, private source, or raw Cursor session data.
+  - type: input
+    id: sdk_version
+    attributes:
+      label: SDK version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: agent_version
+    attributes:
+      label: cursor-agent version
+      description: Output of `cursor-agent --version`.
+    validations:
+      required: true
+  - type: input
+    id: go_version
+    attributes:
+      label: Go version and operating system
+      placeholder: go1.26.0, linux/amd64
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest safe program and exact commands needed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security check
+      options:
+        - label: This is not a security vulnerability. I will use the private channel in SECURITY.md for vulnerabilities.
+          required: true

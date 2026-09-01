@@ -1,0 +1,9 @@
+{
+  "type": "result",
+  "subtype": "error",
+  "is_error": true,
+  "duration_ms": 1,
+  "duration_api_ms": 1,
+  "result": "Unauthorized: invalid API key",
+  "session_id": ""
+}
