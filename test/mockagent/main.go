@@ -1,0 +1,87 @@
+// Command cursor-agent-mock impersonates cursor-agent for SDK tests.
+//
+// It records argv and Cursor-related environment into $CURSOR_MOCK_RECORD and
+// selects a print-json fixture with $CURSOR_MOCK_SCENARIO.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func main() {
+	args := os.Args[1:]
+	if err := writeRecord(args); err != nil {
+		fmt.Fprintln(os.Stderr, "cursor-agent-mock: record:", err)
+	}
+	os.Exit(route(args))
+}
+
+type Record struct {
+	Argv []string          `json:"argv"`
+	Env  map[string]string `json:"env"`
+	Cwd  string            `json:"cwd"`
+}
+
+func writeRecord(args []string) error {
+	path := os.Getenv("CURSOR_MOCK_RECORD")
+	if path == "" {
+		return nil
+	}
+	cwd, _ := os.Getwd()
+	record := Record{Argv: args, Env: cursorEnv(), Cwd: cwd}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func cursorEnv() map[string]string {
+	out := map[string]string{}
+	for _, entry := range os.Environ() {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if name == "NO_OPEN_BROWSER" || strings.HasPrefix(name, "CURSOR_") {
+			out[name] = value
+		}
+	}
+	return out
+}
+
+func route(args []string) int {
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			fmt.Println("2026.08.25-3e8eec8")
+			return 0
+		}
+	}
+	scenario := os.Getenv("CURSOR_MOCK_SCENARIO")
+	if scenario == "" {
+		scenario = "ask-success"
+	}
+	data, err := os.ReadFile(fixturePath(scenario))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cursor-agent-mock:", err)
+		return 2
+	}
+	fmt.Print(string(data))
+	if scenario == "ask-auth" {
+		fmt.Fprintln(os.Stderr, "Unauthorized: invalid API key")
+		return 1
+	}
+	return 0
+}
+
+func fixturePath(scenario string) string {
+	dir := os.Getenv("CURSOR_MOCK_TESTDATA")
+	if dir == "" {
+		dir = "test/testdata"
+	}
+	return filepath.Join(dir, scenario+".json")
+}
