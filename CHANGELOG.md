@@ -6,6 +6,11 @@ releases may include API changes.
 
 ## [Unreleased]
 
+### Changed
+
+- README leads with cursor-agent itself. Sibling Go SDKs, including
+  claude-code-go, are listed at the end.
+
 ### Added
 
 - Local `cursor-agent` client: locate, print-json `Ask`/`AskCtx`, version probe,
