@@ -83,5 +83,9 @@ func fixturePath(scenario string) string {
 	if dir == "" {
 		dir = "test/testdata"
 	}
-	return filepath.Join(dir, scenario+".json")
+	jsonPath := filepath.Join(dir, scenario+".json")
+	if _, err := os.Stat(jsonPath); err == nil {
+		return jsonPath
+	}
+	return filepath.Join(dir, scenario+".txt")
 }

@@ -23,6 +23,7 @@ const (
 	KindRateLimit           Kind = "rate_limit"
 	KindTransport           Kind = "transport"
 	KindValidation          Kind = "validation"
+	KindWorkspaceUntrusted  Kind = "workspace_untrusted"
 	KindUnknown             Kind = "unknown"
 )
 
@@ -138,6 +139,23 @@ func classifyKind(result *AskResult, stderr string, exitCode int) Kind {
 		return KindProcess
 	}
 	return KindUnknown
+}
+
+// isWorkspaceTrustPrompt reports whether stdout carries the CLI's workspace
+// trust gate, which is human text rather than JSON even under
+// --output-format json.
+func isWorkspaceTrustPrompt(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "workspace trust required") ||
+		(strings.Contains(lower, "do you trust the contents") && strings.Contains(lower, "directory"))
+}
+
+func workspaceUntrustedError(stdout string) *Error {
+	return &Error{
+		Kind:    KindWorkspaceUntrusted,
+		Message: "cursor-agent requires workspace trust for this directory; set AskOptions.Trust (or Yolo/Force)",
+		Stderr:  stdout,
+	}
 }
 
 func isAuthFailure(text string) bool {
