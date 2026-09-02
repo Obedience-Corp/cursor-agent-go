@@ -23,12 +23,12 @@ container GO_VERSION="1.26":
         -v "{{ PROJECT_DIR }}:/src" \
         -w /src \
         "golang:{{ GO_VERSION }}-bookworm" \
-        sh -c 'set -eu; test -z "$(gofmt -l .)"; go vet ./...; go test ./...; go test -race ./pkg/cursor/...; go build ./examples/...'
+        sh -c 'set -eu; test -z "$(gofmt -l .)"; go vet ./...; go test ./...; go test -race ./pkg/cursor/...; go build -o /tmp/examples-out/ ./examples/...'
 
-# Run core library tests
+# Run core library tests (all pkg/cursor packages, including subpackages)
 lib:
     @echo "Testing core library..."
-    cd {{ PROJECT_DIR }} && go test ./pkg/cursor
+    cd {{ PROJECT_DIR }} && go test ./pkg/cursor/...
     @echo "Core library tests complete"
 
 # Run dangerous package tests
@@ -47,8 +47,12 @@ race:
 verbose:
     cd {{ PROJECT_DIR }} && go test -v ./pkg/cursor/...
 
-# Verify examples compile
+# Verify examples compile without dropping binaries in the repo
 examples:
-    @echo "Compiling examples (build-only)..."
-    cd {{ PROJECT_DIR }} && go build ./examples/...
-    @echo "All examples compile"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Compiling examples (build-only)..."
+    out="$(mktemp -d)"
+    trap 'rm -rf "$out"' EXIT
+    cd "{{ PROJECT_DIR }}" && go build -o "$out/" ./examples/...
+    echo "All examples compile"

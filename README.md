@@ -90,10 +90,75 @@ func main() {
 `Ask`/`AskCtx` always pass `-p --output-format json`. Force/yolo is rejected
 unless you go through `pkg/cursor/dangerous`.
 
+`AskResult.Usage` carries the CLI's real token counters (`inputTokens`,
+`outputTokens`, `cacheReadTokens`, `cacheWriteTokens`); they are read off the
+wire, never estimated from cost.
+
 ```bash
 just build ask
 ./bin/ask "What is in go.mod?"
 ```
+
+## Long-lived sessions (ACP)
+
+`pkg/cursor/acp` drives `cursor-agent acp` over newline-delimited JSON-RPC for
+a session that survives many turns, streams incrementally, and can be canceled
+mid-turn.
+
+```go
+client, err := acp.Start(ctx, acp.Options{
+	WorkingDirectory: ".",
+	Handler: acp.HandlerFuncs{
+		Update: func(_ context.Context, _ string, u acp.Update) {
+			if u.SessionUpdate == acp.UpdateAgentMessageChunk && u.Content != nil {
+				fmt.Print(u.Content.Text)
+			}
+		},
+		Permission: func(_ context.Context, r acp.PermissionRequest) acp.PermissionOutcome {
+			return acp.AllowPermission(r.Options[0].OptionID)
+		},
+	},
+})
+defer client.Close()
+
+client.Initialize(ctx)
+session, _ := client.NewSession(ctx, "")
+result, _ := client.Ask(ctx, session.SessionID, "What changed in the last commit?")
+fmt.Println(result.StopReason) // end_turn
+
+// From another goroutine, to stop the turn early:
+client.Cancel(session.SessionID) // the pending Ask returns StopCancelled
+```
+
+Text arrives as many `agent_message_chunk` updates, so concatenate them.
+Unmodeled update variants are still delivered, with the original payload on
+`Update.Raw`.
+
+## Cloud agents
+
+`pkg/cursor/cloud` targets the Cloud Agents v1 API. An agent is durable; each
+prompt creates a run, and streaming and cancellation are scoped to a run.
+
+```go
+c := cloud.New(os.Getenv("CURSOR_API_KEY"))
+created, err := c.CreateAgent(ctx, cloud.CreateAgentRequest{
+	Prompt: cloud.Prompt{Text: "Add a README with setup instructions"},
+})
+
+stream, err := c.StreamRun(ctx, created.Agent.ID, created.Run.ID, nil)
+defer stream.Close()
+for {
+	event, err := stream.Recv()
+	if errors.Is(err, io.EOF) {
+		break
+	}
+	// event.Type is one of cloud.EventStatus, EventAssistant, EventResult, ...
+}
+```
+
+Resume a dropped stream with `StreamOptions{LastEventID: stream.LastEventID()}`.
+Non-2xx responses come back as `*cloud.APIError` with `IsRetryable`,
+`IsNotFound`, and `IsUnauthorized`.
 
 ## Locate
 
@@ -111,7 +176,9 @@ client := cursor.NewClient("/usr/local/bin/cursor-agent")
 ## Errors
 
 A thrown `*cursor.Error` with `KindAuth` or `KindTransport` means the run never
-executed correctly. `result.IsError` plus a classified process error means the
+executed correctly. `KindWorkspaceUntrusted` means the CLI refused the
+directory: on a first run in an untrusted workspace it prints a human-readable
+trust prompt instead of JSON, so set `AskOptions.Trust`. `result.IsError` plus a classified process error means the
 CLI ran and failed. Check `errors.As` and `err.IsRetryable()`.
 
 ## Dangerous mode
