@@ -56,7 +56,9 @@ export CURSOR_API_KEY="cursor_..."
 go get github.com/Obedience-Corp/cursor-agent-go@latest
 ```
 
-Private checkout: `GOPRIVATE=github.com/Obedience-Corp/*`.
+The repository is public, so no `GOPRIVATE` entry is needed. If you consume
+other Obedience Corp modules that are private, set
+`GOPRIVATE=github.com/Obedience-Corp/*` for those.
 
 ## Quick start
 
@@ -241,7 +243,18 @@ Use it only in a disposable workspace. The production check is best-effort.
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): process model and package layout
 - [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md): flags the SDK emits
+- [docs/ACP.md](docs/ACP.md): ACP transport, update variants, cancellation, and the permission and completion caveats
+- [docs/CLOUD.md](docs/CLOUD.md): Cloud Agents model, streaming, resume, and error taxonomy
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): gates, mock binary, hero image
+
+## Examples
+
+| Example | What it does |
+| --- | --- |
+| [examples/ask](examples/ask) | one-shot print-mode question |
+| [examples/acp_stream](examples/acp_stream) | long-lived ACP session, streamed |
+| [examples/cloud_create](examples/cloud_create) | create a cloud agent and follow its run over SSE |
+| [examples/models](examples/models) | list models, CLI version, and auth state |
 
 ## Testing
 
