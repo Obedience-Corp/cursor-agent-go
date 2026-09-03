@@ -243,6 +243,26 @@ Use it only in a disposable workspace. The production check is best-effort.
 - [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md): flags the SDK emits
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md): gates, mock binary, hero image
 
+## Testing
+
+```bash
+just test all          # unit tests, all packages
+just test race         # race detector
+just test integration  # end to end against the mock binary and mock cloud server
+just test integration-real  # same lanes against a real installed cursor-agent
+```
+
+`just test integration` needs no credentials and makes no network calls: it
+builds `test/mockagent` (which impersonates print mode, the admin subcommands,
+and a full ACP session) and starts `test/mockcloud` (an httptest Cloud Agents
+API). `integration-real` sets `CURSOR_INTEGRATION_REAL=1`, spawns the installed
+`cursor-agent`, and consumes account quota, so it is opt in.
+
+The mock ACP scenarios are selected with `CURSOR_MOCK_ACP`: unset for a normal
+turn, `permission` to exercise the permission round trip the real CLI never
+sends, `cancel` for a cancelled stop reason, and `toolnewline` for the
+newline-bearing tool call id seen in live capture.
+
 ## Development
 
 ```bash

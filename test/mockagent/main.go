@@ -73,6 +73,8 @@ func route(args []string) int {
 	// both an ask and the admin surface.
 	if len(args) > 0 {
 		switch args[0] {
+		case "acp":
+			return serveACP()
 		case "about", "status", "models":
 			scenario = "admin-" + args[0]
 		}

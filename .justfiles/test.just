@@ -37,6 +37,24 @@ dangerous:
     cd {{ PROJECT_DIR }} && go test ./pkg/cursor/dangerous
     @echo "Dangerous package tests complete"
 
+# Run integration lanes against the mock agent binary and mock cloud server
+integration:
+    @echo "Running integration lanes (mocks only, no credentials needed)..."
+    cd {{ PROJECT_DIR }} && go test -tags integration ./test/integration/
+    @echo "Integration lanes complete"
+
+# Run integration lanes against a real installed cursor-agent (needs login)
+integration-real:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v cursor-agent >/dev/null 2>&1; then
+        echo "cursor-agent is not on PATH; install it or set CURSOR_AGENT_BIN" >&2
+        exit 1
+    fi
+    echo "Running integration lanes against the real agent..."
+    echo "This spawns the installed cursor-agent and consumes account quota."
+    cd "{{ PROJECT_DIR }}" && CURSOR_INTEGRATION_REAL=1 go test -tags integration -count=1 -v ./test/integration/ -run Real
+
 # Run tests with race detection
 race:
     @echo "Running tests with race detection..."
