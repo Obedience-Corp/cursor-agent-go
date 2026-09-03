@@ -18,6 +18,12 @@ type Handler interface {
 
 	// OnPermission answers a session/request_permission call. Returning
 	// CancelPermission() refuses the tool call.
+	//
+	// This is NOT a containment boundary. cursor-agent 2026.08.31 never sends
+	// session/request_permission in its default configuration: it was observed
+	// editing files, running shell commands, and writing outside the session
+	// cwd without asking. Implement this for spec compliance and future CLI
+	// versions, but confine the agent with OS-level isolation.
 	OnPermission(ctx context.Context, req PermissionRequest) PermissionOutcome
 }
 

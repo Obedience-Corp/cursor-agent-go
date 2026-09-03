@@ -134,6 +134,13 @@ Text arrives as many `agent_message_chunk` updates, so concatenate them.
 Unmodeled update variants are still delivered, with the original payload on
 `Update.Raw`.
 
+**The permission callback is not a sandbox.** `cursor-agent 2026.08.31` never
+sent `session/request_permission` in default configuration during testing. It
+edited files, ran shell commands, and wrote a file outside the directory passed
+as the session `cwd`, all without asking. The handler is implemented for spec
+compliance and future CLI versions; confine the agent with OS-level isolation
+rather than relying on it.
+
 ## Cloud agents
 
 `pkg/cursor/cloud` targets the Cloud Agents v1 API. An agent is durable; each
@@ -172,6 +179,18 @@ Non-2xx responses come back as `*cloud.APIError` with `IsRetryable`,
 ```go
 client := cursor.NewClient("/usr/local/bin/cursor-agent")
 ```
+
+## Admin
+
+```go
+about, _ := client.About(ctx)   // cliVersion, latestStatus, tier, os
+status, _ := client.Status(ctx) // isAuthenticated, token flags, userInfo
+models, _ := client.Models(ctx) // parsed from the text listing
+```
+
+`About` and `Status` use the CLI's `--format json`. `Models` has no JSON mode,
+so it parses the `id - Name` listing and skips the header. `Status.UserInfo`
+carries an email, a user id, and a name; treat it as personal data.
 
 ## Errors
 

@@ -1,0 +1,5 @@
+Available models
+
+auto - Auto (default)
+gpt-5.3-codex-low - Codex 5.3 Low
+composer-2.5 - Composer 2.5

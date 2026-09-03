@@ -54,16 +54,28 @@ func cursorEnv() map[string]string {
 	return out
 }
 
+// agentVersion mirrors cursor.TestedAgentVersion. It is duplicated rather than
+// imported so the mock stays a standalone binary with no SDK dependency.
+const agentVersion = "2026.08.31-4057e58"
+
 func route(args []string) int {
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
-			fmt.Println("2026.08.25-3e8eec8")
+			fmt.Println(agentVersion)
 			return 0
 		}
 	}
 	scenario := os.Getenv("CURSOR_MOCK_SCENARIO")
 	if scenario == "" {
 		scenario = "ask-success"
+	}
+	// Admin subcommands serve their own fixture so a single scenario can cover
+	// both an ask and the admin surface.
+	if len(args) > 0 {
+		switch args[0] {
+		case "about", "status", "models":
+			scenario = "admin-" + args[0]
+		}
 	}
 	data, err := os.ReadFile(fixturePath(scenario))
 	if err != nil {

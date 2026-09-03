@@ -4,6 +4,9 @@
 // session is long-lived: the client initializes once, opens a session, then
 // issues prompt turns that stream session/update notifications back before the
 // turn's result resolves.
+//
+// Security: the session cwd is a starting directory, not a sandbox. The CLI
+// was observed writing outside it without requesting permission. See Handler.
 package acp
 
 import "encoding/json"
@@ -140,9 +143,9 @@ type PermissionOption struct {
 
 // PermissionRequest is the payload of a session/request_permission call.
 //
-// Shape follows the ACP specification. It was not exercised in the CA0005
-// capture because the agent already held workspace permission; see
-// evidence/acp/README.md.
+// Shape follows the ACP specification. cursor-agent 2026.08.31 was never
+// observed sending this frame, including when writing outside the session
+// cwd, so the handler must not be treated as a sandbox. See Handler.
 type PermissionRequest struct {
 	SessionID string             `json:"sessionId"`
 	ToolCall  Update             `json:"toolCall"`
