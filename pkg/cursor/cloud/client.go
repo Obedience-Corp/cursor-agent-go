@@ -59,6 +59,32 @@ func (e *APIError) IsUnauthorized() bool {
 	return e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden
 }
 
+// IsBusy reports a 409 caused by an agent already having an active run. Only
+// one run is active per agent, so a follow-up prompt must wait.
+func (e *APIError) IsBusy() bool {
+	return e.StatusCode == http.StatusConflict && e.Code == CodeAgentBusy
+}
+
+// IsStreamExpired reports a 410 from the run stream, meaning the server's
+// retention window passed and the events can no longer be replayed.
+func (e *APIError) IsStreamExpired() bool {
+	return e.StatusCode == http.StatusGone && e.Code == CodeStreamExpired
+}
+
+// IsInvalidLastEventID reports a 400 caused by resuming with an event id that
+// does not belong to the requested run.
+func (e *APIError) IsInvalidLastEventID() bool {
+	return e.StatusCode == http.StatusBadRequest && e.Code == CodeInvalidLastEventID
+}
+
+// Error codes the API returns in the error envelope.
+const (
+	CodeAgentBusy          = "agent_busy"
+	CodeAgentIDConflict    = "agent_id_conflict"
+	CodeStreamExpired      = "stream_expired"
+	CodeInvalidLastEventID = "invalid_last_event_id"
+)
+
 func (c *Client) httpClient() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient

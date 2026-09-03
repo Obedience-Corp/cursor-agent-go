@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testClient(t *testing.T, handler http.HandlerFunc) *Client {
@@ -273,5 +274,124 @@ func TestIsTerminal(t *testing.T) {
 		if IsTerminal(s) {
 			t.Fatalf("%s should not be terminal", s)
 		}
+	}
+}
+
+func TestErrorCodeHelpers(t *testing.T) {
+	tests := []struct {
+		name             string
+		status           int
+		body             string
+		busy             bool
+		expired          bool
+		invalidLastEvent bool
+	}{
+		{name: "agent busy", status: 409, body: `{"error":{"code":"agent_busy","message":"run active"}}`, busy: true},
+		{name: "id conflict is not busy", status: 409, body: `{"error":{"code":"agent_id_conflict","message":"dup"}}`},
+		{name: "stream expired", status: 410, body: `{"error":{"code":"stream_expired","message":"gone"}}`, expired: true},
+		{name: "invalid last event id", status: 400, body: `{"error":{"code":"invalid_last_event_id","message":"bad"}}`, invalidLastEvent: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+			_, err := c.Agent(context.Background(), "bc-1")
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("err = %v", err)
+			}
+			if apiErr.IsBusy() != tc.busy {
+				t.Fatalf("IsBusy = %v, want %v", apiErr.IsBusy(), tc.busy)
+			}
+			if apiErr.IsStreamExpired() != tc.expired {
+				t.Fatalf("IsStreamExpired = %v, want %v", apiErr.IsStreamExpired(), tc.expired)
+			}
+			if apiErr.IsInvalidLastEventID() != tc.invalidLastEvent {
+				t.Fatalf("IsInvalidLastEventID = %v, want %v", apiErr.IsInvalidLastEventID(), tc.invalidLastEvent)
+			}
+		})
+	}
+}
+
+func TestListAndDownloadArtifacts(t *testing.T) {
+	var gotPath, gotQuery string
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		if strings.HasSuffix(r.URL.Path, "/download") {
+			_, _ = w.Write([]byte(`{"url":"https://signed.example/artifact"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"artifacts":[{"path":"artifacts/shot.png","sizeBytes":12345,"updatedAt":"2026-09-02T10:00:00Z"}]}`))
+	})
+
+	arts, err := c.ListArtifacts(context.Background(), "bc-1")
+	if err != nil {
+		t.Fatalf("ListArtifacts: %v", err)
+	}
+	if len(arts) != 1 || arts[0].SizeBytes != 12345 || arts[0].Path != "artifacts/shot.png" {
+		t.Fatalf("artifacts = %+v", arts)
+	}
+
+	url, err := c.DownloadArtifact(context.Background(), "bc-1", "artifacts/shot.png")
+	if err != nil {
+		t.Fatalf("DownloadArtifact: %v", err)
+	}
+	if url != "https://signed.example/artifact" {
+		t.Fatalf("url = %q", url)
+	}
+	if !strings.HasSuffix(gotPath, "/artifacts/download") {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if !strings.Contains(gotQuery, "path=artifacts%2Fshot.png") {
+		t.Fatalf("query = %q", gotQuery)
+	}
+}
+
+func TestWaitRunPollsUntilTerminal(t *testing.T) {
+	var calls int
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		status := RunRunning
+		if calls >= 3 {
+			status = RunFinished
+		}
+		_, _ = w.Write([]byte(`{"id":"run-1","agentId":"bc-1","status":"` + status + `","result":"done"}`))
+	})
+	run, err := c.WaitRun(context.Background(), "bc-1", "run-1", time.Millisecond)
+	if err != nil {
+		t.Fatalf("WaitRun: %v", err)
+	}
+	if run.Status != RunFinished || calls < 3 {
+		t.Fatalf("run = %+v after %d calls", run, calls)
+	}
+}
+
+func TestWaitRunHonorsContext(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"run-1","agentId":"bc-1","status":"RUNNING"}`))
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := c.WaitRun(ctx, "bc-1", "run-1", time.Millisecond); err == nil {
+		t.Fatal("expected context error")
+	}
+}
+
+func TestWaitRunStopsOnNonRetryableError(t *testing.T) {
+	var calls int
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":"run_not_found","message":"gone"}}`))
+	})
+	_, err := c.WaitRun(context.Background(), "bc-1", "run-1", time.Millisecond)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || !apiErr.IsNotFound() {
+		t.Fatalf("err = %v, want not-found APIError", err)
+	}
+	if calls != 1 {
+		t.Fatalf("polled %d times, want 1 (must not retry a 404)", calls)
 	}
 }

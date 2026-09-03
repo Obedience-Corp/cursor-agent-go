@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CreateAgent creates an agent and enqueues its initial run.
@@ -164,4 +165,64 @@ func pageQuery(limit int, cursor string) string {
 		return ""
 	}
 	return "?" + q.Encode()
+}
+
+// ListArtifacts lists files the agent produced under artifacts/.
+func (c *Client) ListArtifacts(ctx context.Context, agentID string) ([]Artifact, error) {
+	if err := requireID("agentID", agentID); err != nil {
+		return nil, err
+	}
+	var out ArtifactList
+	if err := c.do(ctx, http.MethodGet, "/v1/agents/"+pathEscape(agentID)+"/artifacts", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Artifacts, nil
+}
+
+// DownloadArtifact returns a presigned URL for one artifact path.
+func (c *Client) DownloadArtifact(ctx context.Context, agentID, artifactPath string) (string, error) {
+	if err := requireID("agentID", agentID); err != nil {
+		return "", err
+	}
+	if err := requireID("artifactPath", artifactPath); err != nil {
+		return "", err
+	}
+	q := url.Values{}
+	q.Set("path", artifactPath)
+	path := "/v1/agents/" + pathEscape(agentID) + "/artifacts/download?" + q.Encode()
+	var out ArtifactDownload
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return "", err
+	}
+	return out.URL, nil
+}
+
+// WaitRun polls until the run reaches a terminal status, ctx is done, or a
+// non-retryable error occurs. A zero interval polls every 5 seconds.
+//
+// Polling is used rather than StreamRun because a caller that only needs the
+// final state should not hold an SSE connection open; use StreamRun when the
+// intermediate events matter.
+func (c *Client) WaitRun(ctx context.Context, agentID, runID string, interval time.Duration) (*Run, error) {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		run, err := c.Run(ctx, agentID, runID)
+		if err != nil {
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || !apiErr.IsRetryable() {
+				return nil, err
+			}
+		} else if IsTerminal(run.Status) {
+			return run, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }

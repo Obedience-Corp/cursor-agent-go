@@ -178,8 +178,17 @@ for {
 ```
 
 Resume a dropped stream with `StreamOptions{LastEventID: stream.LastEventID()}`.
-Non-2xx responses come back as `*cloud.APIError` with `IsRetryable`,
-`IsNotFound`, and `IsUnauthorized`.
+If you only need the final state, `WaitRun` polls to a terminal status without
+holding a connection open.
+
+Non-2xx responses come back as `*cloud.APIError`. Alongside `IsRetryable`,
+`IsNotFound`, and `IsUnauthorized`, three conditions have their own checks
+because they are recoverable in specific ways: `IsBusy` (409 `agent_busy`, the
+agent already has an active run), `IsStreamExpired` (410, the retention window
+passed), and `IsInvalidLastEventID` (400, resume id does not belong to the run).
+
+`ListArtifacts` and `DownloadArtifact` reach files the agent left under
+`artifacts/`; download returns a presigned URL.
 
 ## Locate
 

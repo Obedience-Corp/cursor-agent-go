@@ -148,6 +148,23 @@ type Usage struct {
 	TotalCents       int    `json:"totalCents,omitempty"`
 }
 
+// Artifact is one file the agent produced under the workspace artifacts/ dir.
+type Artifact struct {
+	Path      string    `json:"path"`
+	SizeBytes int64     `json:"sizeBytes"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ArtifactList is the reply to ListArtifacts.
+type ArtifactList struct {
+	Artifacts []Artifact `json:"artifacts"`
+}
+
+// ArtifactDownload carries the presigned URL for one artifact.
+type ArtifactDownload struct {
+	URL string `json:"url"`
+}
+
 // Model is one selectable cloud model.
 type Model struct {
 	ID   string `json:"id"`
