@@ -134,6 +134,20 @@ Text arrives as many `agent_message_chunk` updates, so concatenate them.
 Unmodeled update variants are still delivered, with the original payload on
 `Update.Raw`.
 
+`CollectAsk` aggregates a whole turn for you, merging `tool_call` frames with
+the later `tool_call_update` frames that actually carry the arguments:
+
+```go
+tr, _ := client.CollectAsk(ctx, session.SessionID, "Add a test for Parse")
+fmt.Println(tr.Text, tr.StopReason, len(tr.ToolCalls))
+```
+
+**Do not treat `StopReason` or the reply text as proof the work happened.** In
+live testing an edit tool call never reached a terminal status (the last update
+read `in_progress` even on success), and one run in three returned `end_turn`
+with the text `DONE` while the file it claimed to write did not exist. Check
+the side effect yourself.
+
 **The permission callback is not a sandbox.** `cursor-agent 2026.08.31` never
 sent `session/request_permission` in default configuration during testing. It
 edited files, ran shell commands, and wrote a file outside the directory passed

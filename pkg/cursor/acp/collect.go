@@ -1,0 +1,146 @@
+package acp
+
+import (
+	"context"
+	"strings"
+	"sync"
+)
+
+// ToolCall is an aggregated view of one tool invocation.
+//
+// The CLI announces a call with an empty RawInput and fills the arguments and
+// locations in on later tool_call_update frames sharing the same ID, so this
+// merges every frame for an ID rather than keeping only the first.
+type ToolCall struct {
+	ID        string
+	Title     string
+	Kind      string
+	Status    string
+	RawInput  []byte
+	Locations []ToolCallLocation
+}
+
+// Transcript is the aggregated outcome of one prompt turn.
+//
+// StopReason and Text are not evidence that the work happened. Across live
+// runs of cursor-agent 2026.09.02 an edit tool call was never observed
+// reaching a terminal status: the turn resolved end_turn while the last
+// tool_call_update still read in_progress, and in one run of three the file
+// the agent reported writing did not exist afterwards. Verify side effects
+// yourself rather than trusting the reply text.
+type Transcript struct {
+	Text       string
+	Thoughts   string
+	ToolCalls  []ToolCall
+	StopReason string
+	Title      string
+}
+
+// collector accumulates updates for a single turn.
+type collector struct {
+	mu       sync.Mutex
+	text     strings.Builder
+	thoughts strings.Builder
+	title    string
+	order    []string
+	calls    map[string]*ToolCall
+	delegate Handler
+}
+
+func newCollector(delegate Handler) *collector {
+	if delegate == nil {
+		delegate = DenyAll
+	}
+	return &collector{calls: make(map[string]*ToolCall), delegate: delegate}
+}
+
+func (c *collector) OnUpdate(ctx context.Context, sessionID string, update Update) {
+	c.mu.Lock()
+	switch update.SessionUpdate {
+	case UpdateAgentMessageChunk:
+		if update.Content != nil {
+			c.text.WriteString(update.Content.Text)
+		}
+	case UpdateAgentThoughtChunk:
+		if update.Content != nil {
+			c.thoughts.WriteString(update.Content.Text)
+		}
+	case UpdateSessionInfo:
+		if update.Title != "" {
+			c.title = update.Title
+		}
+	case UpdateToolCall, UpdateToolCallUpdate:
+		c.mergeToolCall(update)
+	}
+	c.mu.Unlock()
+	c.delegate.OnUpdate(ctx, sessionID, update)
+}
+
+// mergeToolCall requires c.mu held.
+func (c *collector) mergeToolCall(update Update) {
+	if update.ToolCallID == "" {
+		return
+	}
+	call, seen := c.calls[update.ToolCallID]
+	if !seen {
+		call = &ToolCall{ID: update.ToolCallID}
+		c.calls[update.ToolCallID] = call
+		c.order = append(c.order, update.ToolCallID)
+	}
+	if update.Title != "" {
+		call.Title = update.Title
+	}
+	if update.Kind != "" {
+		call.Kind = update.Kind
+	}
+	if update.Status != "" {
+		call.Status = update.Status
+	}
+	if len(update.RawInput) > 0 && string(update.RawInput) != "{}" {
+		call.RawInput = append([]byte(nil), update.RawInput...)
+	}
+	if len(update.Locations) > 0 {
+		call.Locations = update.Locations
+	}
+}
+
+func (c *collector) OnPermission(ctx context.Context, req PermissionRequest) PermissionOutcome {
+	return c.delegate.OnPermission(ctx, req)
+}
+
+func (c *collector) transcript(stopReason string) *Transcript {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := &Transcript{
+		Text:       c.text.String(),
+		Thoughts:   c.thoughts.String(),
+		StopReason: stopReason,
+		Title:      c.title,
+	}
+	for _, id := range c.order {
+		out.ToolCalls = append(out.ToolCalls, *c.calls[id])
+	}
+	return out
+}
+
+// CollectPrompt sends one turn and aggregates every update until the turn
+// resolves, returning the assembled text, thoughts, and merged tool calls.
+//
+// The client's own Handler still receives each update as it arrives; this
+// aggregates on top of it rather than replacing it.
+func (c *Client) CollectPrompt(ctx context.Context, sessionID string, blocks ...ContentBlock) (*Transcript, error) {
+	col := newCollector(c.conn.currentHandler())
+	previous := c.conn.swapHandler(col)
+	defer c.conn.swapHandler(previous)
+
+	result, err := c.Prompt(ctx, sessionID, blocks...)
+	if err != nil {
+		return col.transcript(""), err
+	}
+	return col.transcript(result.StopReason), nil
+}
+
+// CollectAsk is CollectPrompt with a single text block.
+func (c *Client) CollectAsk(ctx context.Context, sessionID, text string) (*Transcript, error) {
+	return c.CollectPrompt(ctx, sessionID, TextBlock(text))
+}

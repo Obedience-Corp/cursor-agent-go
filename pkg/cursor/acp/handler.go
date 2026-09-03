@@ -52,6 +52,17 @@ func (h HandlerFuncs) OnPermission(ctx context.Context, req PermissionRequest) P
 // permission request.
 var DenyAll Handler = HandlerFuncs{}
 
+// PolicyHandler answers every permission request with a fixed policy and
+// forwards updates to Update when set.
+func PolicyHandler(policy PermissionPolicy, update func(ctx context.Context, sessionID string, u Update)) Handler {
+	return HandlerFuncs{
+		Update: update,
+		Permission: func(_ context.Context, req PermissionRequest) PermissionOutcome {
+			return policy.Decide(req.Options)
+		},
+	}
+}
+
 type updateNotification struct {
 	SessionID string          `json:"sessionId"`
 	Update    json.RawMessage `json:"update"`
@@ -70,7 +81,7 @@ func (c *conn) serveNotification(msg rpcMessage, raw []byte) {
 		return
 	}
 	update.Raw = append(json.RawMessage(nil), note.Update...)
-	c.handler.OnUpdate(context.Background(), note.SessionID, update)
+	c.currentHandler().OnUpdate(context.Background(), note.SessionID, update)
 }
 
 func (c *conn) serveRequest(msg rpcMessage) {
@@ -82,7 +93,7 @@ func (c *conn) serveRequest(msg rpcMessage) {
 			c.reply(id, nil, &rpcError{Code: -32602, Message: "invalid permission params"})
 			return
 		}
-		outcome := c.handler.OnPermission(context.Background(), req)
+		outcome := c.currentHandler().OnPermission(context.Background(), req)
 		c.reply(id, map[string]any{"outcome": outcome}, nil)
 	default:
 		c.reply(id, nil, &rpcError{Code: -32601, Message: "method not supported by client: " + msg.Method})

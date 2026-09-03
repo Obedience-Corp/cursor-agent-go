@@ -195,6 +195,23 @@ func (c *conn) shutdown(err error) {
 	}
 }
 
+// currentHandler reads the handler under the lock. CollectPrompt swaps it for
+// the duration of a turn, and the read loop runs concurrently.
+func (c *conn) currentHandler() Handler {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.handler
+}
+
+// swapHandler installs h and returns the previous handler.
+func (c *conn) swapHandler(h Handler) Handler {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	previous := c.handler
+	c.handler = h
+	return previous
+}
+
 func rawID(id int) *json.RawMessage {
 	b, _ := json.Marshal(id)
 	raw := json.RawMessage(b)

@@ -173,3 +173,64 @@ func AllowPermission(optionID string) PermissionOutcome {
 func CancelPermission() PermissionOutcome {
 	return PermissionOutcome{Outcome: OutcomeCancelled}
 }
+
+// Option kinds an agent may offer on a permission request.
+const (
+	KindAllowOnce    = "allow_once"
+	KindAllowAlways  = "allow_always"
+	KindRejectOnce   = "reject_once"
+	KindRejectAlways = "reject_always"
+)
+
+// PermissionPolicy picks an option by kind rather than by id, since ids are
+// agent-defined but kinds are part of the protocol.
+type PermissionPolicy string
+
+// Built-in permission policies.
+const (
+	// PolicyRejectOnce refuses without granting anything. It is the default.
+	PolicyRejectOnce PermissionPolicy = "reject_once"
+	// PolicyAllowOnce grants the single pending call.
+	PolicyAllowOnce PermissionPolicy = "allow_once"
+	// PolicyAllowAlways grants the call and any later call of the same shape.
+	PolicyAllowAlways PermissionPolicy = "allow_always"
+)
+
+// Decide maps a policy onto the options an agent actually offered.
+//
+// It prefers an option whose Kind matches the policy, falls back to matching
+// on the option id, and cancels when the agent offered nothing usable, so an
+// allow policy can never silently pick a reject option or vice versa.
+func (p PermissionPolicy) Decide(options []PermissionOption) PermissionOutcome {
+	want := string(p)
+	if p == PolicyRejectOnce {
+		// Refusing needs no option from the agent.
+		if id := findOption(options, want); id != "" {
+			return AllowPermission(id)
+		}
+		return CancelPermission()
+	}
+	if id := findOption(options, want); id != "" {
+		return AllowPermission(id)
+	}
+	if p == PolicyAllowAlways {
+		if id := findOption(options, string(PolicyAllowOnce)); id != "" {
+			return AllowPermission(id)
+		}
+	}
+	return CancelPermission()
+}
+
+func findOption(options []PermissionOption, want string) string {
+	for _, o := range options {
+		if o.Kind == want {
+			return o.OptionID
+		}
+	}
+	for _, o := range options {
+		if o.OptionID == want {
+			return o.OptionID
+		}
+	}
+	return ""
+}
