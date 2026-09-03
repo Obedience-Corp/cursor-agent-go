@@ -15,9 +15,8 @@
   <img alt="Go 1.24+" src="https://img.shields.io/badge/go-1.24%2B-00ADD8.svg">
 </p>
 
-Wraps the installed **`cursor-agent`** binary the same way
-[`grok-go-sdk`](https://github.com/lancekrogers/grok-go-sdk) wraps `grok` and
-[`vercel-fx-go`](https://github.com/Obedience-Corp/vercel-fx-go) wraps `fx`.
+Go client for the [Cursor Agent CLI](https://cursor.com/docs/cli/overview).
+It wraps the installed **`cursor-agent`** binary.
 
 | Runtime | Transport | Status |
 | --- | --- | --- |
@@ -25,9 +24,9 @@ Wraps the installed **`cursor-agent`** binary the same way
 | Local streaming | `cursor-agent acp` | Landing |
 | Cloud agents | HTTP + SSE on `api.cursor.com` | Landing |
 
-It does **not** wrap the `cursor` editor, a generic `agent` command, or the
-official Node/Python SDKs. `agent` collides with other tools; locate prefers
-`cursor-agent` and only accepts `agent` when the file is actually Cursor's CLI.
+This is not a wrapper for the `cursor` editor or Cursor's Node/Python SDKs.
+Locate looks for `cursor-agent` first. It only accepts a command named `agent`
+when that file is actually Cursor's CLI.
 
 Standard library only. Auth is `Client.APIKey` or `CURSOR_API_KEY`. Every
 spawned process gets `NO_OPEN_BROWSER=1`.
@@ -55,10 +54,6 @@ export CURSOR_API_KEY="cursor_..."
 ```bash
 go get github.com/Obedience-Corp/cursor-agent-go@latest
 ```
-
-The repository is public, so no `GOPRIVATE` entry is needed. If you consume
-other Obedience Corp modules that are private, set
-`GOPRIVATE=github.com/Obedience-Corp/*` for those.
 
 ## Quick start
 
@@ -219,11 +214,13 @@ carries an email, a user id, and a name; treat it as personal data.
 
 ## Errors
 
-A thrown `*cursor.Error` with `KindAuth` or `KindTransport` means the run never
-executed correctly. `KindWorkspaceUntrusted` means the CLI refused the
-directory: on a first run in an untrusted workspace it prints a human-readable
-trust prompt instead of JSON, so set `AskOptions.Trust`. `result.IsError` plus a classified process error means the
-CLI ran and failed. Check `errors.As` and `err.IsRetryable()`.
+`*cursor.Error` with `KindAuth` or `KindTransport` means the run never started.
+`result.IsError` plus a classified process error means the CLI ran and failed.
+Check `errors.As` and `err.IsRetryable()`.
+
+`KindWorkspaceUntrusted` means the CLI refused the directory: on a first run in
+an untrusted workspace it prints a human-readable trust prompt instead of JSON,
+so set `AskOptions.Trust`.
 
 ## Dangerous mode
 
@@ -283,11 +280,15 @@ just lint
 just test all
 just test race
 just build all
-just docs hero-check
 ```
 
-`just docs hero` regenerates `docs/images/hero.png` with the grok CLI Imagine
-tool (same recipe as the technical videos campaign).
+## Related
+
+Go SDKs for other coding-agent CLIs:
+
+- [claude-code-go](https://github.com/lancekrogers/claude-code-go) wraps `claude`
+- [grok-go-sdk](https://github.com/lancekrogers/grok-go-sdk) wraps `grok`
+- [vercel-fx-go](https://github.com/Obedience-Corp/vercel-fx-go) wraps `fx`
 
 ## License
 
