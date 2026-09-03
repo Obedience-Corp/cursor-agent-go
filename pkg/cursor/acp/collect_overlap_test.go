@@ -140,3 +140,54 @@ func TestConcurrentCollectPromptsAreIsolated(t *testing.T) {
 		t.Fatalf("%d collectors leaked after both collections finished", remaining)
 	}
 }
+
+// Collectors accumulate updates but must never intercept permission requests.
+// Under the old handler-swap design a collector sat in front of the caller's
+// handler and forwarded permissions to it; now it is out of that path
+// entirely, so assert the caller still decides while a collection is running.
+func TestPermissionReachesBaseHandlerDuringCollection(t *testing.T) {
+	var mu sync.Mutex
+	asked := 0
+	base := HandlerFuncs{
+		Permission: func(_ context.Context, req PermissionRequest) PermissionOutcome {
+			mu.Lock()
+			asked++
+			mu.Unlock()
+			return PolicyAllowOnce.Decide(req.Options)
+		},
+	}
+	c, agent := newFakeAgent(t, base)
+
+	stop := c.registerCollector("session-a", newCollector(nil))
+	defer stop()
+
+	params := map[string]any{
+		"sessionId": "session-a",
+		"toolCall":  map[string]any{"sessionUpdate": UpdateToolCall, "toolCallId": "tc1"},
+		"options": []map[string]any{
+			{"optionId": "o-once", "kind": KindAllowOnce, "name": "Allow once"},
+		},
+	}
+	if err := agent.enc.Encode(rpcMessage{
+		JSONRPC: "2.0", ID: rawID(42),
+		Method: "session/request_permission", Params: mustRaw(params),
+	}); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	reply := agent.next(t)
+	var body struct {
+		Outcome PermissionOutcome `json:"outcome"`
+	}
+	if err := json.Unmarshal(reply.Result, &body); err != nil {
+		t.Fatalf("decode reply %s: %v", reply.Result, err)
+	}
+	if body.Outcome.Outcome != OutcomeSelected || body.Outcome.OptionID != "o-once" {
+		t.Fatalf("outcome = %+v, want the base handler's decision", body.Outcome)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if asked != 1 {
+		t.Fatalf("base handler asked %d times, want 1", asked)
+	}
+}
