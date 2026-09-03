@@ -6,5 +6,11 @@
   "duration_api_ms": 40,
   "result": "README.md is a Go SDK for cursor-agent.",
   "session_id": "00000000-0000-4000-8000-000000000001",
-  "request_id": "req_test"
+  "request_id": "req_test",
+  "usage": {
+    "inputTokens": 19833,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0
+  }
 }

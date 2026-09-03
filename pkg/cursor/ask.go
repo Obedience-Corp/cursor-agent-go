@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+// Usage is the token accounting print mode reports for a turn. The CLI emits
+// real counters, so these are never estimated from cost.
+type Usage struct {
+	InputTokens      int `json:"inputTokens"`
+	OutputTokens     int `json:"outputTokens"`
+	CacheReadTokens  int `json:"cacheReadTokens"`
+	CacheWriteTokens int `json:"cacheWriteTokens"`
+}
+
 // AskResult is the JSON object print mode writes on stdout.
 type AskResult struct {
 	Type          string          `json:"type"`
@@ -18,6 +27,7 @@ type AskResult struct {
 	Result        string          `json:"result"`
 	SessionID     string          `json:"session_id"`
 	RequestID     string          `json:"request_id,omitempty"`
+	Usage         Usage           `json:"usage"`
 	Raw           json.RawMessage `json:"-"`
 	Stderr        string          `json:"-"`
 	ExitCode      int             `json:"-"`
@@ -85,6 +95,9 @@ func parseAskResult(stdout []byte) (*AskResult, *Error) {
 	}
 	var result AskResult
 	if err := json.Unmarshal(trimmed, &result); err != nil {
+		if isWorkspaceTrustPrompt(string(trimmed)) {
+			return nil, workspaceUntrustedError(truncate(trimmed, 400))
+		}
 		return nil, validationErrorWith("cursor-agent ask stdout is not JSON: "+truncate(trimmed, 400), err)
 	}
 	result.Raw = append(json.RawMessage(nil), trimmed...)

@@ -23,12 +23,12 @@ container GO_VERSION="1.26":
         -v "{{ PROJECT_DIR }}:/src" \
         -w /src \
         "golang:{{ GO_VERSION }}-bookworm" \
-        sh -c 'set -eu; test -z "$(gofmt -l .)"; go vet ./...; go test ./...; go test -race ./pkg/cursor/...; go build ./examples/...'
+        sh -c 'set -eu; test -z "$(gofmt -l .)"; go vet ./...; go test ./...; go test -race ./pkg/cursor/...; go build -o /tmp/examples-out/ ./examples/...'
 
-# Run core library tests
+# Run core library tests (all pkg/cursor packages, including subpackages)
 lib:
     @echo "Testing core library..."
-    cd {{ PROJECT_DIR }} && go test ./pkg/cursor
+    cd {{ PROJECT_DIR }} && go test ./pkg/cursor/...
     @echo "Core library tests complete"
 
 # Run dangerous package tests
@@ -36,6 +36,24 @@ dangerous:
     @echo "Testing dangerous package..."
     cd {{ PROJECT_DIR }} && go test ./pkg/cursor/dangerous
     @echo "Dangerous package tests complete"
+
+# Run integration lanes against the mock agent binary and mock cloud server
+integration:
+    @echo "Running integration lanes (mocks only, no credentials needed)..."
+    cd {{ PROJECT_DIR }} && go test -tags integration ./test/integration/
+    @echo "Integration lanes complete"
+
+# Run integration lanes against a real installed cursor-agent (needs login)
+integration-real:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v cursor-agent >/dev/null 2>&1; then
+        echo "cursor-agent is not on PATH; install it or set CURSOR_AGENT_BIN" >&2
+        exit 1
+    fi
+    echo "Running integration lanes against the real agent..."
+    echo "This spawns the installed cursor-agent and consumes account quota."
+    cd "{{ PROJECT_DIR }}" && CURSOR_INTEGRATION_REAL=1 go test -tags integration -count=1 -v ./test/integration/ -run Real
 
 # Run tests with race detection
 race:
@@ -47,8 +65,12 @@ race:
 verbose:
     cd {{ PROJECT_DIR }} && go test -v ./pkg/cursor/...
 
-# Verify examples compile
+# Verify examples compile without dropping binaries in the repo
 examples:
-    @echo "Compiling examples (build-only)..."
-    cd {{ PROJECT_DIR }} && go build ./examples/...
-    @echo "All examples compile"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Compiling examples (build-only)..."
+    out="$(mktemp -d)"
+    trap 'rm -rf "$out"' EXIT
+    cd "{{ PROJECT_DIR }}" && go build -o "$out/" ./examples/...
+    echo "All examples compile"

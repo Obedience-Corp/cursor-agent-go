@@ -91,3 +91,24 @@ func TestClassifyAuth(t *testing.T) {
 		t.Fatalf("message %q", sdkErr.Message)
 	}
 }
+
+func TestAskCtxParsesUsage(t *testing.T) {
+	client := mockClient(t, "ask-success")
+	result, err := client.AskCtx(context.Background(), "hello", nil)
+	if err != nil {
+		t.Fatalf("AskCtx: %v", err)
+	}
+	want := Usage{InputTokens: 19833, OutputTokens: 5}
+	if result.Usage != want {
+		t.Fatalf("usage = %+v, want %+v", result.Usage, want)
+	}
+}
+
+func TestAskCtxWorkspaceTrustGate(t *testing.T) {
+	client := mockClient(t, "ask-untrusted")
+	_, err := client.AskCtx(context.Background(), "hello", nil)
+	sdkErr := requireCursorError(t, err, KindWorkspaceUntrusted)
+	if !strings.Contains(sdkErr.Message, "Trust") {
+		t.Fatalf("message %q does not mention Trust", sdkErr.Message)
+	}
+}

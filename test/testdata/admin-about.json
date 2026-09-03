@@ -1,0 +1,13 @@
+{
+  "cliVersion": "2026.08.31-4057e58",
+  "latestStatus": "up_to_date",
+  "latestVersion": "2026.08.31-4057e58",
+  "model": "Codex 5.3 Low Fast",
+  "subscriptionTier": "Ultra",
+  "osPlatform": "darwin",
+  "osArch": "arm64",
+  "userEmail": "tester@example.com",
+  "terminalProgram": "tmux",
+  "shell": "zsh",
+  "lastRequestId": null
+}

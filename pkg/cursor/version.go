@@ -7,7 +7,7 @@ import (
 
 // TestedAgentVersion is the Cursor Agent CLI release covered by the SDK's
 // fixtures and compatibility lane.
-const TestedAgentVersion = "2026.08.25-3e8eec8"
+const TestedAgentVersion = "2026.08.31-4057e58"
 
 // Version runs "cursor-agent --version" and returns the trimmed stdout.
 func (c *Client) Version(ctx context.Context) (string, error) {
