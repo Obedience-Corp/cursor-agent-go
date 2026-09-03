@@ -49,18 +49,24 @@ type conn struct {
 	closeErr error
 
 	handler Handler
+	// collectors route a turn's updates to whoever is collecting that
+	// session. Keyed by session id so concurrent collections on one
+	// connection cannot see each other's updates.
+	collectors   map[string][]*collector
+	collectorSeq int
 
 	done chan struct{}
 }
 
 func newConn(w io.Writer, r io.Reader, handler Handler) *conn {
 	c := &conn{
-		w:       w,
-		enc:     json.NewEncoder(w),
-		nextID:  1,
-		waiting: make(map[int]*pending),
-		handler: handler,
-		done:    make(chan struct{}),
+		w:          w,
+		enc:        json.NewEncoder(w),
+		nextID:     1,
+		waiting:    make(map[int]*pending),
+		handler:    handler,
+		collectors: make(map[string][]*collector),
+		done:       make(chan struct{}),
 	}
 	go c.readLoop(r)
 	return c
@@ -195,21 +201,50 @@ func (c *conn) shutdown(err error) {
 	}
 }
 
-// currentHandler reads the handler under the lock. CollectPrompt swaps it for
-// the duration of a turn, and the read loop runs concurrently.
+// currentHandler reads the base handler under the lock; the read loop runs
+// concurrently with callers that inspect it.
 func (c *conn) currentHandler() Handler {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.handler
 }
 
-// swapHandler installs h and returns the previous handler.
-func (c *conn) swapHandler(h Handler) Handler {
+// registerCollector attaches col to one session's updates and returns the
+// function that detaches it. Registration is scoped to a session and
+// removal is by identity, so overlapping collections on the same connection
+// neither observe each other's updates nor disturb each other on teardown.
+func (c *conn) registerCollector(sessionID string, col *collector) func() {
+	c.mu.Lock()
+	c.collectors[sessionID] = append(c.collectors[sessionID], col)
+	c.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			existing := c.collectors[sessionID]
+			for i, candidate := range existing {
+				if candidate == col {
+					c.collectors[sessionID] = append(existing[:i:i], existing[i+1:]...)
+					break
+				}
+			}
+			if len(c.collectors[sessionID]) == 0 {
+				delete(c.collectors, sessionID)
+			}
+		})
+	}
+}
+
+// collectorsFor snapshots the collectors listening to one session.
+func (c *conn) collectorsFor(sessionID string) []*collector {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	previous := c.handler
-	c.handler = h
-	return previous
+	if len(c.collectors[sessionID]) == 0 {
+		return nil
+	}
+	return append([]*collector(nil), c.collectors[sessionID]...)
 }
 
 func rawID(id int) *json.RawMessage {

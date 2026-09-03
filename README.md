@@ -132,7 +132,9 @@ Unmodeled update variants are still delivered, with the original payload on
 `Update.Raw`.
 
 `CollectAsk` aggregates a whole turn for you, merging `tool_call` frames with
-the later `tool_call_update` frames that actually carry the arguments:
+the later `tool_call_update` frames that actually carry the arguments. It is
+scoped to the session id, so concurrent collections on one connection stay
+isolated:
 
 ```go
 tr, _ := client.CollectAsk(ctx, session.SessionID, "Add a test for Parse")

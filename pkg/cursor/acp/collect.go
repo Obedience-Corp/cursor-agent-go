@@ -36,7 +36,11 @@ type Transcript struct {
 	Title      string
 }
 
-// collector accumulates updates for a single turn.
+// collector accumulates the updates of a single turn on a single session.
+//
+// It is not a Handler: the connection routes updates to it by session id, so
+// it never sees another session's traffic and never displaces the caller's
+// own handler.
 type collector struct {
 	mu       sync.Mutex
 	text     strings.Builder
@@ -44,18 +48,15 @@ type collector struct {
 	title    string
 	order    []string
 	calls    map[string]*ToolCall
-	delegate Handler
 }
 
-func newCollector(delegate Handler) *collector {
-	if delegate == nil {
-		delegate = DenyAll
-	}
-	return &collector{calls: make(map[string]*ToolCall), delegate: delegate}
+func newCollector(_ Handler) *collector {
+	return &collector{calls: make(map[string]*ToolCall)}
 }
 
-func (c *collector) OnUpdate(ctx context.Context, sessionID string, update Update) {
+func (c *collector) collect(update Update) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	switch update.SessionUpdate {
 	case UpdateAgentMessageChunk:
 		if update.Content != nil {
@@ -72,8 +73,6 @@ func (c *collector) OnUpdate(ctx context.Context, sessionID string, update Updat
 	case UpdateToolCall, UpdateToolCallUpdate:
 		c.mergeToolCall(update)
 	}
-	c.mu.Unlock()
-	c.delegate.OnUpdate(ctx, sessionID, update)
 }
 
 // mergeToolCall requires c.mu held.
@@ -104,10 +103,6 @@ func (c *collector) mergeToolCall(update Update) {
 	}
 }
 
-func (c *collector) OnPermission(ctx context.Context, req PermissionRequest) PermissionOutcome {
-	return c.delegate.OnPermission(ctx, req)
-}
-
 func (c *collector) transcript(stopReason string) *Transcript {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -123,15 +118,18 @@ func (c *collector) transcript(stopReason string) *Transcript {
 	return out
 }
 
-// CollectPrompt sends one turn and aggregates every update until the turn
-// resolves, returning the assembled text, thoughts, and merged tool calls.
+// CollectPrompt sends one turn and aggregates every update for that session
+// until the turn resolves, returning the assembled text, thoughts, and merged
+// tool calls.
 //
-// The client's own Handler still receives each update as it arrives; this
-// aggregates on top of it rather than replacing it.
+// The client's own Handler still receives every update as it arrives; this
+// aggregates alongside it rather than replacing it. Aggregation is scoped to
+// sessionID, so concurrent CollectPrompt calls on one connection are safe and
+// never observe each other's updates.
 func (c *Client) CollectPrompt(ctx context.Context, sessionID string, blocks ...ContentBlock) (*Transcript, error) {
-	col := newCollector(c.conn.currentHandler())
-	previous := c.conn.swapHandler(col)
-	defer c.conn.swapHandler(previous)
+	col := newCollector(nil)
+	stop := c.conn.registerCollector(sessionID, col)
+	defer stop()
 
 	result, err := c.Prompt(ctx, sessionID, blocks...)
 	if err != nil {

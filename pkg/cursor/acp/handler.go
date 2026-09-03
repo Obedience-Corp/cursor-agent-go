@@ -81,7 +81,13 @@ func (c *conn) serveNotification(msg rpcMessage, raw []byte) {
 		return
 	}
 	update.Raw = append(json.RawMessage(nil), note.Update...)
-	c.currentHandler().OnUpdate(context.Background(), note.SessionID, update)
+	ctx := context.Background()
+	// Collectors for this session first, then the always-installed base
+	// handler. The base handler never stops receiving updates.
+	for _, col := range c.collectorsFor(note.SessionID) {
+		col.collect(update)
+	}
+	c.currentHandler().OnUpdate(ctx, note.SessionID, update)
 }
 
 func (c *conn) serveRequest(msg rpcMessage) {

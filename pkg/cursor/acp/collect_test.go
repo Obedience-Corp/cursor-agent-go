@@ -59,21 +59,20 @@ func TestDefaultHandlerRejects(t *testing.T) {
 
 func TestCollectorAggregatesTextAndMergesToolCalls(t *testing.T) {
 	const id = "call_a\nctc_b" // the live capture really does contain a newline
-	col := newCollector(DenyAll)
-	ctx := context.Background()
+	col := newCollector(nil)
 
-	col.OnUpdate(ctx, "s1", Update{SessionUpdate: UpdateSessionInfo, Title: "File Creator"})
-	col.OnUpdate(ctx, "s1", Update{SessionUpdate: UpdateAgentThoughtChunk, Content: &ContentBlock{Text: "planning"}})
-	col.OnUpdate(ctx, "s1", Update{SessionUpdate: UpdateAgentMessageChunk, Content: &ContentBlock{Text: "Hello "}})
-	col.OnUpdate(ctx, "s1", Update{SessionUpdate: UpdateAgentMessageChunk, Content: &ContentBlock{Text: "world"}})
+	col.collect(Update{SessionUpdate: UpdateSessionInfo, Title: "File Creator"})
+	col.collect(Update{SessionUpdate: UpdateAgentThoughtChunk, Content: &ContentBlock{Text: "planning"}})
+	col.collect(Update{SessionUpdate: UpdateAgentMessageChunk, Content: &ContentBlock{Text: "Hello "}})
+	col.collect(Update{SessionUpdate: UpdateAgentMessageChunk, Content: &ContentBlock{Text: "world"}})
 	// tool_call announces with pending status and an empty rawInput...
-	col.OnUpdate(ctx, "s1", Update{
+	col.collect(Update{
 		SessionUpdate: UpdateToolCall, ToolCallID: id,
 		Title: "Edit File", Kind: "edit", Status: "pending",
 		RawInput: json.RawMessage(`{}`),
 	})
 	// ...and the real arguments arrive later under the same id.
-	col.OnUpdate(ctx, "s1", Update{
+	col.collect(Update{
 		SessionUpdate: UpdateToolCallUpdate, ToolCallID: id,
 		Title:     "Edit `/tmp/hello.txt`",
 		Status:    "completed",
@@ -106,17 +105,5 @@ func TestCollectorAggregatesTextAndMergesToolCalls(t *testing.T) {
 	}
 	if got.StopReason != StopEndTurn {
 		t.Fatalf("stopReason = %q", got.StopReason)
-	}
-}
-
-func TestCollectorForwardsToDelegate(t *testing.T) {
-	var seen int
-	delegate := HandlerFuncs{Update: func(context.Context, string, Update) { seen++ }}
-	col := newCollector(delegate)
-	col.OnUpdate(context.Background(), "s1", Update{
-		SessionUpdate: UpdateAgentMessageChunk, Content: &ContentBlock{Text: "x"},
-	})
-	if seen != 1 {
-		t.Fatalf("delegate saw %d updates, want 1", seen)
 	}
 }

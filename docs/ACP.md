@@ -60,6 +60,12 @@ thoughts, title, merged tool calls, and the stop reason:
 tr, _ := client.CollectAsk(ctx, session.SessionID, "Add a test for Parse")
 ```
 
+Aggregation is scoped to the session id. The connection routes a turn's updates
+to whoever registered for that session, so concurrent `CollectPrompt` calls on
+one connection are safe: they never see each other's updates, and one finishing
+never detaches another. The client's own `Handler` keeps receiving every update
+throughout.
+
 Merging is not cosmetic. The CLI announces a call with `status: pending` and an
 **empty** `rawInput`, then sends the real arguments and `locations` on a later
 `tool_call_update` sharing the id. Keeping only the first frame loses the
