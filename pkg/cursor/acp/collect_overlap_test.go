@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -14,8 +15,8 @@ func TestOverlappingCollectionsDoNotMixSessions(t *testing.T) {
 
 	colA := newCollector(nil)
 	colB := newCollector(nil)
-	stopA := c.registerCollector("session-a", colA)
-	stopB := c.registerCollector("session-b", colB)
+	stopA := mustRegister(t, c, "session-a", colA)
+	stopB := mustRegister(t, c, "session-b", colB)
 
 	agent.notifyUpdate(t, "session-a", map[string]any{
 		"sessionUpdate": UpdateAgentMessageChunk,
@@ -61,7 +62,7 @@ func TestBaseHandlerSurvivesCollections(t *testing.T) {
 	}}
 	c, agent := newFakeAgent(t, base)
 
-	stop := c.registerCollector("session-a", newCollector(nil))
+	stop := mustRegister(t, c, "session-a", newCollector(nil))
 	agent.notifyUpdate(t, "session-a", map[string]any{
 		"sessionUpdate": UpdateAgentMessageChunk,
 		"content":       map[string]any{"type": "text", "text": "x"},
@@ -158,7 +159,7 @@ func TestPermissionReachesBaseHandlerDuringCollection(t *testing.T) {
 	}
 	c, agent := newFakeAgent(t, base)
 
-	stop := c.registerCollector("session-a", newCollector(nil))
+	stop := mustRegister(t, c, "session-a", newCollector(nil))
 	defer stop()
 
 	params := map[string]any{
@@ -189,5 +190,81 @@ func TestPermissionReachesBaseHandlerDuringCollection(t *testing.T) {
 	defer mu.Unlock()
 	if asked != 1 {
 		t.Fatalf("base handler asked %d times, want 1", asked)
+	}
+}
+
+func mustRegister(t *testing.T, c *conn, sessionID string, col *collector) func() {
+	t.Helper()
+	stop, err := c.registerCollector(sessionID, col)
+	if err != nil {
+		t.Fatalf("registerCollector(%s): %v", sessionID, err)
+	}
+	return stop
+}
+
+// session/update carries only a sessionId, with no turn correlation, so two
+// overlapping collections on one session cannot be separated. The second must
+// be refused rather than handed a mixed transcript.
+func TestSameSessionCollectionIsRefused(t *testing.T) {
+	c, _ := newFakeAgent(t, DenyAll)
+
+	stop := mustRegister(t, c, "session-a", newCollector(nil))
+
+	_, err := c.registerCollector("session-a", newCollector(nil))
+	if !errors.Is(err, ErrCollectionInProgress) {
+		t.Fatalf("second registration err = %v, want ErrCollectionInProgress", err)
+	}
+
+	// A different session is unaffected.
+	otherStop, err := c.registerCollector("session-b", newCollector(nil))
+	if err != nil {
+		t.Fatalf("different session refused: %v", err)
+	}
+	otherStop()
+
+	// Once the first finishes the session is collectable again.
+	stop()
+	again, err := c.registerCollector("session-a", newCollector(nil))
+	if err != nil {
+		t.Fatalf("re-registration after release failed: %v", err)
+	}
+	again()
+}
+
+// The public API must surface the refusal, not just the internal registry.
+func TestCollectPromptRefusesOverlappingSameSession(t *testing.T) {
+	c, agent := newFakeAgent(t, DenyAll)
+	client := &Client{conn: c}
+
+	release := make(chan struct{})
+	go func() {
+		for msg := range agent.requests {
+			if msg.Method != "session/prompt" {
+				continue
+			}
+			<-release
+			agent.respond(t, msg.ID, map[string]any{"stopReason": StopEndTurn})
+		}
+	}()
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := client.CollectAsk(t.Context(), "session-a", "one")
+		first <- err
+	}()
+
+	// Wait until the first collection has actually registered.
+	waitFor(t, func() bool { return c.collectorFor("session-a") != nil })
+
+	if _, err := client.CollectAsk(t.Context(), "session-a", "two"); !errors.Is(err, ErrCollectionInProgress) {
+		t.Fatalf("overlapping CollectAsk err = %v, want ErrCollectionInProgress", err)
+	}
+
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatalf("first collection: %v", err)
+	}
+	if c.collectorFor("session-a") != nil {
+		t.Fatal("collector leaked after the first collection finished")
 	}
 }

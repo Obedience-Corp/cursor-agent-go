@@ -49,11 +49,11 @@ type conn struct {
 	closeErr error
 
 	handler Handler
-	// collectors route a turn's updates to whoever is collecting that
-	// session. Keyed by session id so concurrent collections on one
-	// connection cannot see each other's updates.
-	collectors   map[string][]*collector
-	collectorSeq int
+	// collectors routes a session's updates to whoever is collecting it. At
+	// most one collector per session: session/update carries no turn
+	// correlation, so two collections on one session are inherently ambiguous
+	// and the second is refused rather than silently mixed.
+	collectors map[string]*collector
 
 	done chan struct{}
 }
@@ -65,7 +65,7 @@ func newConn(w io.Writer, r io.Reader, handler Handler) *conn {
 		nextID:     1,
 		waiting:    make(map[int]*pending),
 		handler:    handler,
-		collectors: make(map[string][]*collector),
+		collectors: make(map[string]*collector),
 		done:       make(chan struct{}),
 	}
 	go c.readLoop(r)
@@ -209,13 +209,27 @@ func (c *conn) currentHandler() Handler {
 	return c.handler
 }
 
+// ErrCollectionInProgress is returned when a collection is already running for
+// a session.
+//
+// session/update carries only a sessionId: there is no turn or request
+// correlation anywhere in the payload, so updates from two overlapping turns on
+// one session cannot be told apart. Rather than return silently mixed
+// transcripts, collection is serialized per session and the second caller is
+// told so. Different sessions on the same connection collect concurrently.
+var ErrCollectionInProgress = errors.New("acp: a collection is already in progress for this session")
+
 // registerCollector attaches col to one session's updates and returns the
-// function that detaches it. Registration is scoped to a session and
-// removal is by identity, so overlapping collections on the same connection
-// neither observe each other's updates nor disturb each other on teardown.
-func (c *conn) registerCollector(sessionID string, col *collector) func() {
+// function that detaches it. It fails with ErrCollectionInProgress when that
+// session is already being collected. Removal is by identity, so a session
+// finishing never detaches another session's collector.
+func (c *conn) registerCollector(sessionID string, col *collector) (func(), error) {
 	c.mu.Lock()
-	c.collectors[sessionID] = append(c.collectors[sessionID], col)
+	if _, busy := c.collectors[sessionID]; busy {
+		c.mu.Unlock()
+		return nil, ErrCollectionInProgress
+	}
+	c.collectors[sessionID] = col
 	c.mu.Unlock()
 
 	var once sync.Once
@@ -223,28 +237,18 @@ func (c *conn) registerCollector(sessionID string, col *collector) func() {
 		once.Do(func() {
 			c.mu.Lock()
 			defer c.mu.Unlock()
-			existing := c.collectors[sessionID]
-			for i, candidate := range existing {
-				if candidate == col {
-					c.collectors[sessionID] = append(existing[:i:i], existing[i+1:]...)
-					break
-				}
-			}
-			if len(c.collectors[sessionID]) == 0 {
+			if current, ok := c.collectors[sessionID]; ok && current == col {
 				delete(c.collectors, sessionID)
 			}
 		})
-	}
+	}, nil
 }
 
-// collectorsFor snapshots the collectors listening to one session.
-func (c *conn) collectorsFor(sessionID string) []*collector {
+// collectorFor returns the collector listening to one session, if any.
+func (c *conn) collectorFor(sessionID string) *collector {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.collectors[sessionID]) == 0 {
-		return nil
-	}
-	return append([]*collector(nil), c.collectors[sessionID]...)
+	return c.collectors[sessionID]
 }
 
 func rawID(id int) *json.RawMessage {

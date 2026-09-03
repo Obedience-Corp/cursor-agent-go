@@ -123,17 +123,25 @@ func (c *collector) transcript(stopReason string) *Transcript {
 // tool calls.
 //
 // The client's own Handler still receives every update as it arrives; this
-// aggregates alongside it rather than replacing it. Aggregation is scoped to
-// sessionID, so concurrent CollectPrompt calls on one connection are safe and
-// never observe each other's updates.
+// aggregates alongside it rather than replacing it.
+//
+// Aggregation is scoped to sessionID. Collections on different sessions run
+// concurrently and never observe each other's updates. Collections on the
+// SAME session are serialized: the second call returns
+// ErrCollectionInProgress rather than a mixed transcript, because
+// session/update carries no turn correlation and the updates of two
+// overlapping turns are indistinguishable on the wire.
 func (c *Client) CollectPrompt(ctx context.Context, sessionID string, blocks ...ContentBlock) (*Transcript, error) {
 	col := newCollector(nil)
-	stop := c.conn.registerCollector(sessionID, col)
+	stop, err := c.conn.registerCollector(sessionID, col)
+	if err != nil {
+		return nil, err
+	}
 	defer stop()
 
-	result, err := c.Prompt(ctx, sessionID, blocks...)
-	if err != nil {
-		return col.transcript(""), err
+	result, promptErr := c.Prompt(ctx, sessionID, blocks...)
+	if promptErr != nil {
+		return col.transcript(""), promptErr
 	}
 	return col.transcript(result.StopReason), nil
 }

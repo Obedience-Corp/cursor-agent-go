@@ -84,7 +84,7 @@ func (c *conn) serveNotification(msg rpcMessage, raw []byte) {
 	ctx := context.Background()
 	// Collectors for this session first, then the always-installed base
 	// handler. The base handler never stops receiving updates.
-	for _, col := range c.collectorsFor(note.SessionID) {
+	if col := c.collectorFor(note.SessionID); col != nil {
 		col.collect(update)
 	}
 	c.currentHandler().OnUpdate(ctx, note.SessionID, update)

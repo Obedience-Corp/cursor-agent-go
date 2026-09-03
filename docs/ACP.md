@@ -60,11 +60,32 @@ thoughts, title, merged tool calls, and the stop reason:
 tr, _ := client.CollectAsk(ctx, session.SessionID, "Add a test for Parse")
 ```
 
-Aggregation is scoped to the session id. The connection routes a turn's updates
-to whoever registered for that session, so concurrent `CollectPrompt` calls on
-one connection are safe: they never see each other's updates, and one finishing
-never detaches another. The client's own `Handler` keeps receiving every update
-throughout.
+Aggregation is scoped to the session id, and the concurrency contract follows
+from what the wire actually carries:
+
+| Case | Behaviour |
+| --- | --- |
+| Different sessions, same connection | Run concurrently, fully isolated |
+| Same session, overlapping | Second call returns `ErrCollectionInProgress` |
+
+The refusal is not a limitation of this implementation, it is forced by the
+protocol. Across every captured `session/update` frame the only correlation
+field is `sessionId`:
+
+```
+params keys: {"sessionId", "update"}
+update keys: {"sessionUpdate", "content", "toolCallId", "title",
+              "kind", "status", "rawInput", "rawOutput", "locations",
+              "availableCommands"}
+```
+
+There is no turn id, prompt id, or request id anywhere in the payload, so the
+updates of two overlapping turns on one session are indistinguishable. Handing
+back a silently mixed transcript would be worse than refusing, so collection is
+serialized per session and the second caller is told why.
+
+The client's own `Handler` keeps receiving every update throughout, and one
+session finishing never detaches another's collector.
 
 Merging is not cosmetic. The CLI announces a call with `status: pending` and an
 **empty** `rawInput`, then sends the real arguments and `locations` on a later

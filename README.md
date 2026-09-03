@@ -132,9 +132,11 @@ Unmodeled update variants are still delivered, with the original payload on
 `Update.Raw`.
 
 `CollectAsk` aggregates a whole turn for you, merging `tool_call` frames with
-the later `tool_call_update` frames that actually carry the arguments. It is
-scoped to the session id, so concurrent collections on one connection stay
-isolated:
+the later `tool_call_update` frames that actually carry the arguments.
+Collections on different sessions run concurrently and stay isolated; two
+overlapping collections on the *same* session return
+`acp.ErrCollectionInProgress`, because `session/update` carries no turn
+correlation and their updates cannot be told apart:
 
 ```go
 tr, _ := client.CollectAsk(ctx, session.SessionID, "Add a test for Parse")
