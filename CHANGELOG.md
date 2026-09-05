@@ -6,6 +6,8 @@ releases may include API changes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-05
+
 ### Added
 
 - `acp.Client` exposes the child process: `PID` returns the live pid or zero
