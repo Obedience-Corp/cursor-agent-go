@@ -2,6 +2,7 @@ package cursor
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,45 @@ func TestBuildACPArgs(t *testing.T) {
 	want := []string{"acp", "--model", "composer-2.5", "--mode", "ask"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v\nwant %v", got, want)
+	}
+}
+
+// TestAgentModeRendersNoFlag pins the CLI contract both builders have to obey:
+// --mode accepts only plan and ask. Against cursor-agent 2026.09.02-c22c1a3,
+// "--mode agent" exits 1 with
+//
+//	error: option '--mode <mode>' argument 'agent' is invalid. Allowed choices are plan, ask.
+//
+// for print mode and for the acp subcommand alike, so emitting it made every
+// agent-mode run fail before it started. Agent is the default: it is an absent
+// flag, not a value.
+func TestAgentModeRendersNoFlag(t *testing.T) {
+	builders := map[string]func(*AskOptions) []string{
+		"print": func(opts *AskOptions) []string { return BuildPrintArgs("hi", opts) },
+		"acp":   BuildACPArgs,
+	}
+	for name, build := range builders {
+		for _, mode := range []Mode{ModeAgent, ModeUnset} {
+			t.Run(name+"/"+string(mode), func(t *testing.T) {
+				args := build(&AskOptions{Model: "composer-2.5", Mode: mode})
+				if slices.Contains(args, "--mode") {
+					t.Fatalf("%v carries a --mode flag; agent is the CLI default", args)
+				}
+				if slices.Contains(args, "agent") {
+					t.Fatalf("%v carries the value \"agent\", which the CLI rejects", args)
+				}
+			})
+		}
+	}
+}
+
+// TestAgentAndUnsetModeAreIdenticalOnTheWire states the equivalence directly,
+// so a future change cannot make one of them mean something else by accident.
+func TestAgentAndUnsetModeAreIdenticalOnTheWire(t *testing.T) {
+	agent := BuildPrintArgs("hi", &AskOptions{Mode: ModeAgent})
+	unset := BuildPrintArgs("hi", &AskOptions{Mode: ModeUnset})
+	if !reflect.DeepEqual(agent, unset) {
+		t.Fatalf("agent %v and unset %v must render identically", agent, unset)
 	}
 }
 

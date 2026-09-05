@@ -79,6 +79,13 @@ func (c *Client) askOnce(ctx context.Context, args, env []string, dir string, ti
 	}
 	result, parseErr := parseAskResult(outcome.stdout)
 	if parseErr != nil {
+		// Empty stdout plus a failed exit means the CLI refused the run before
+		// it produced any JSON, most often over a bad flag. Its complaint is on
+		// stderr, so report that rather than the generic "no output" parse
+		// failure, which names a symptom and hides the cause.
+		if len(bytes.TrimSpace(outcome.stdout)) == 0 && (outcome.exitCode != 0 || outcome.err != nil) {
+			return nil, Classify(nil, outcome.stderr, outcome.exitCode, outcome.err)
+		}
 		parseErr.ExitCode = outcome.exitCode
 		parseErr.Stderr = outcome.stderr
 		return nil, parseErr

@@ -104,6 +104,37 @@ func TestAskCtxParsesUsage(t *testing.T) {
 	}
 }
 
+// TestAskCtxSurfacesFlagRejection covers the diagnosability gap that hid the
+// --mode agent bug: when the CLI refuses a run over a bad flag it writes
+// nothing to stdout and puts its complaint on stderr. Reporting "produced no
+// output on stdout" names the symptom and buries the cause in a field that
+// Error() never prints.
+func TestAskCtxSurfacesFlagRejection(t *testing.T) {
+	client := mockClient(t, "ask-bad-flag")
+	_, err := client.AskCtx(context.Background(), "hello", nil)
+	sdkErr := requireCursorError(t, err, KindProcess)
+	if !strings.Contains(sdkErr.Error(), "Allowed choices are plan, ask") {
+		t.Fatalf("the error string must carry the CLI complaint, got %q", sdkErr.Error())
+	}
+	if sdkErr.ExitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", sdkErr.ExitCode)
+	}
+	if !strings.Contains(sdkErr.Stderr, "invalid") {
+		t.Fatalf("stderr = %q", sdkErr.Stderr)
+	}
+}
+
+// TestAskCtxStillReportsEmptyOutputOnSuccess: an empty stdout with a clean exit
+// really is "no output", and must not be reclassified as a process failure.
+func TestAskCtxStillReportsEmptyOutput(t *testing.T) {
+	client := mockClient(t, "ask-empty")
+	_, err := client.AskCtx(context.Background(), "hello", nil)
+	sdkErr := requireCursorError(t, err, KindValidation)
+	if !strings.Contains(sdkErr.Message, "no output on stdout") {
+		t.Fatalf("message = %q", sdkErr.Message)
+	}
+}
+
 func TestAskCtxWorkspaceTrustGate(t *testing.T) {
 	client := mockClient(t, "ask-untrusted")
 	_, err := client.AskCtx(context.Background(), "hello", nil)
