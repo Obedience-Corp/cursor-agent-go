@@ -59,6 +59,11 @@ a stale pid after exit, so zero always means "no process" and never "unknown".
 `ExitErr` blocks until the child has exited and reports the same error `Close`
 returns.
 
+Note for anyone writing a test against a real child: `Start` always passes `acp`
+as the first argument, so `BinPath: "cat"` runs `cat acp`, reads a file that
+does not exist, and exits at once. A process that has to stay alive needs a
+binary that ignores its arguments.
+
 ## Update variants
 
 `session/update` carries a `sessionUpdate` discriminator:

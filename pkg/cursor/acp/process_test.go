@@ -1,30 +1,63 @@
 package acp
 
 import (
+	"io"
 	"os"
-	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
 )
 
-// longLivedBin writes a stand-in agent that ignores its arguments and blocks on
-// stdin. Start always passes "acp" as the first argument, so a bare "cat" would
-// try to read a file named acp and exit immediately.
-func longLivedBin(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "fake-agent")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec cat\n"), 0o755); err != nil {
-		t.Fatalf("write fake agent: %v", err)
+// fakeAgentEnv switches the test binary into stand-in agent mode. The child is
+// this same binary re-executed, so these tests spawn a real process without
+// writing anything: no fixture on disk, nothing to isolate, and no dependency
+// on a shell.
+//
+// A binary is needed rather than a stock command because Start always passes
+// "acp" as the first argument. "cat" would read a file named acp and exit at
+// once, which is why a process that must stay alive cannot be spelled that way.
+const fakeAgentEnv = "CURSOR_ACP_FAKE_AGENT"
+
+// Fake agent behaviors, selected by the value of fakeAgentEnv.
+const (
+	fakeAgentAlive = "alive"
+	fakeAgentExit0 = "exit0"
+	fakeAgentExit1 = "exit1"
+)
+
+// TestMain re-enters as the stand-in agent when the environment asks for it,
+// before any test runs. Argument parsing is deliberately not involved: Start
+// puts "acp" first, and Go's flag package stops at the first non-flag argument,
+// so a -test.run selector placed after it would never be seen.
+func TestMain(m *testing.M) {
+	switch os.Getenv(fakeAgentEnv) {
+	case fakeAgentAlive:
+		// Hold stdin open so the process stays alive until the parent closes
+		// it or kills the process.
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		os.Exit(0)
+	case fakeAgentExit0:
+		os.Exit(0)
+	case fakeAgentExit1:
+		os.Exit(1)
 	}
-	return path
+	os.Exit(m.Run())
+}
+
+// fakeAgentProcess returns Options that re-execute this test binary as a
+// stand-in agent with the given behavior.
+func fakeAgentProcess(behavior string) Options {
+	return Options{
+		BinPath: os.Args[0],
+		Env:     []string{fakeAgentEnv + "=" + behavior},
+	}
 }
 
 // TestPIDReportsTheLiveChild covers the identity a host needs to manage the
 // process it spawned: a real pid while the child runs, and zero once it does
 // not, so "no process" is never confused with an unknown pid.
 func TestPIDReportsTheLiveChild(t *testing.T) {
-	client, err := Start(t.Context(), Options{BinPath: longLivedBin(t)})
+	client, err := Start(t.Context(), fakeAgentProcess(fakeAgentAlive))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -47,8 +80,8 @@ func TestPIDReportsTheLiveChild(t *testing.T) {
 // before: the process dies without the caller asking, and the caller should not
 // have to discover that by issuing a request that fails.
 func TestDoneClosesWhenTheChildExitsOnItsOwn(t *testing.T) {
-	// "true" exits immediately, standing in for a child that dies on its own.
-	client, err := Start(t.Context(), Options{BinPath: "true"})
+	// Exits immediately, standing in for a child that dies on its own.
+	client, err := Start(t.Context(), fakeAgentProcess(fakeAgentExit0))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -70,7 +103,7 @@ func TestDoneClosesWhenTheChildExitsOnItsOwn(t *testing.T) {
 // TestDoneStaysOpenWhileTheChildRuns guards the other direction: a long-lived
 // process must not look dead, or a host would retire a healthy session.
 func TestDoneStaysOpenWhileTheChildRuns(t *testing.T) {
-	client, err := Start(t.Context(), Options{BinPath: longLivedBin(t)})
+	client, err := Start(t.Context(), fakeAgentProcess(fakeAgentAlive))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -86,7 +119,7 @@ func TestDoneStaysOpenWhileTheChildRuns(t *testing.T) {
 // TestExitErrReportsANonZeroExit keeps the exit status reachable, since Close
 // memoizes the same error and a caller may want it without closing.
 func TestExitErrReportsANonZeroExit(t *testing.T) {
-	client, err := Start(t.Context(), Options{BinPath: "false"})
+	client, err := Start(t.Context(), fakeAgentProcess(fakeAgentExit1))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -100,7 +133,7 @@ func TestExitErrReportsANonZeroExit(t *testing.T) {
 // TestCloseReturnsTheSameErrorAsExitErr pins that moving cmd.Wait into a single
 // waiter did not change what Close reports.
 func TestCloseReturnsTheSameErrorAsExitErr(t *testing.T) {
-	client, err := Start(t.Context(), Options{BinPath: "false"})
+	client, err := Start(t.Context(), fakeAgentProcess(fakeAgentExit1))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
