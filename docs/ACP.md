@@ -33,7 +33,36 @@ result, _ := client.Ask(ctx, session.SessionID, "...")
 ```
 
 `Close` shuts the stream down, fails every in-flight call with `ErrClosed`, and
-waits for the process. It is idempotent and asserted leak-free.
+waits for the process. It is idempotent and asserted leak-free. The child does
+not exit zero when its stdin closes, and a context cancel kills it outright, so
+a non-nil error from `Close` is usually just how it ended.
+
+## Process identity
+
+The client owns a real child process, and a host that manages sessions needs to
+see it:
+
+```go
+pid := client.PID()        // live pid, or 0 once it has exited
+
+select {
+case <-client.Done():      // closed when the child exits, asked for or not
+    log.Printf("agent exited: %v", client.ExitErr())
+default:
+}
+```
+
+`Done` is the part worth wiring up. A `cursor-agent` process can die on its own,
+and without watching it the first sign is a request failing with `ErrClosed`,
+one turn later than the process actually went away. `PID` returns 0 rather than
+a stale pid after exit, so zero always means "no process" and never "unknown".
+`ExitErr` blocks until the child has exited and reports the same error `Close`
+returns.
+
+Note for anyone writing a test against a real child: `Start` always passes `acp`
+as the first argument, so `BinPath: "cat"` runs `cat acp`, reads a file that
+does not exist, and exits at once. A process that has to stay alive needs a
+binary that ignores its arguments.
 
 ## Update variants
 

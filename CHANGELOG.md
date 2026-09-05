@@ -6,6 +6,20 @@ releases may include API changes.
 
 ## [Unreleased]
 
+### Added
+
+- `acp.Client` exposes the child process: `PID` returns the live pid or zero
+  once it has exited, `Done` is closed when the child exits whether the caller
+  asked for it or not, and `ExitErr` reports how it ended. Without `Done` the
+  first sign of a process that died on its own was a request failing with
+  `ErrClosed`, a turn later than the exit.
+
+### Changed
+
+- `cmd.Wait` is now owned by a single waiter goroutine started with the
+  process, rather than called from `Close`. `Close` returns the same error as
+  before and stays idempotent.
+
 ## [0.1.0] - 2026-09-05
 
 First tagged release. The local CLI compatibility target is
