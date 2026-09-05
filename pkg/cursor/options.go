@@ -9,7 +9,15 @@ import (
 // Mode is the Cursor Agent execution mode.
 type Mode string
 
-// Modes accepted by --mode. An empty Mode is full agent (the CLI default).
+// Execution modes.
+//
+// Only ModePlan and ModeAsk are accepted by the --mode flag: the CLI rejects
+// "--mode agent" with "Allowed choices are plan, ask" and exit code 1, even
+// though the ACP session/new reply advertises an agent mode alongside the
+// other two. Agent is the CLI default, so ModeAgent and ModeUnset both render
+// as an absent flag and mean the same thing on the wire. ModeAgent exists so a
+// caller can say "agent" explicitly rather than expressing it as an empty
+// string.
 const (
 	ModeUnset Mode = ""
 	ModeAgent Mode = "agent"

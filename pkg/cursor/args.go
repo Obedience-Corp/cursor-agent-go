@@ -63,13 +63,13 @@ func printFlagArgs(opts *AskOptions) []string {
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}
+	// ModeAgent and ModeUnset both render as no flag: agent is the CLI
+	// default and "--mode agent" is rejected outright. See Mode.
 	switch opts.Mode {
 	case ModePlan:
 		args = append(args, "--mode", "plan")
 	case ModeAsk:
 		args = append(args, "--mode", "ask")
-	case ModeAgent:
-		args = append(args, "--mode", "agent")
 	}
 	if opts.Force || opts.Yolo {
 		args = append(args, "--force")

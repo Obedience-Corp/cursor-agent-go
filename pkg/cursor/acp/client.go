@@ -18,7 +18,9 @@ type Options struct {
 	WorkingDirectory string
 	// Args are extra flags appended after the acp subcommand.
 	Args []string
-	// Env replaces the child environment when non-empty.
+	// Env is added to the parent environment, which the child always
+	// inherits; it does not replace it. NO_OPEN_BROWSER=1 is appended last
+	// and always wins.
 	Env []string
 	// Handler receives updates and permission requests. Nil means DenyAll.
 	Handler Handler

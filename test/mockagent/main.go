@@ -79,6 +79,13 @@ func route(args []string) int {
 			scenario = "admin-" + args[0]
 		}
 	}
+	// A rejected flag is the CLI's own argument parser refusing: nothing on
+	// stdout, the complaint on stderr, exit 1. It has no fixture because the
+	// empty stdout is the point.
+	if scenario == "ask-bad-flag" {
+		fmt.Fprintln(os.Stderr, "error: option '--mode <mode>' argument 'agent' is invalid. Allowed choices are plan, ask.")
+		return 1
+	}
 	data, err := os.ReadFile(fixturePath(scenario))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cursor-agent-mock:", err)

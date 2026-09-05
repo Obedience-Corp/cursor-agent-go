@@ -27,7 +27,7 @@ cursor-agent -p --output-format json --model <id> -- <prompt>
 | `--output-format json\|text\|stream-json` | `AskOptions.OutputFormat` (default `json`) |
 | `--stream-partial-output` | `StreamPartial` (requires `stream-json`) |
 | `--model` | `Model` |
-| `--mode plan\|ask` | `Mode` |
+| `--mode plan\|ask` | `Mode` (`ModeAgent` and `ModeUnset` both render as no flag) |
 | `--force` / `--yolo` | `Force` / `Yolo` (requires `AllowDangerousMode`) |
 | `--auto-review` | `AutoReview` (opt-in only) |
 | `--sandbox enabled\|disabled` | `Sandbox` |
@@ -37,6 +37,12 @@ cursor-agent -p --output-format json --model <id> -- <prompt>
 | `--add-dir` | `AddDirs` |
 | `--resume` / `--continue` | `Resume` / `Continue` |
 | `-H` | `Headers` |
+
+Modes: `--mode` accepts only `plan` and `ask`. `--mode agent` is rejected with
+exit code 1 and `Allowed choices are plan, ask`, on the `acp` subcommand as well
+as in print mode, even though the ACP `session/new` reply advertises an agent
+mode. Agent is the CLI default, so `ModeAgent` is an absent flag rather than a
+value.
 
 Auth: `--api-key` is not passed on argv. Set `Client.APIKey` or `CURSOR_API_KEY`.
 

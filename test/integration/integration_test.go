@@ -299,6 +299,32 @@ func TestRealAgentPrintMode(t *testing.T) {
 	}
 }
 
+// TestRealAgentExplicitAgentMode is the lane that would have caught the
+// --mode agent bug. The CLI rejects "--mode agent" with exit code 1 and
+// "Allowed choices are plan, ask", so a caller asking for ModeAgent explicitly
+// used to fail before the agent ever started. Agent is the default: the flag
+// must be absent.
+func TestRealAgentExplicitAgentMode(t *testing.T) {
+	realAgentLane(t)
+	client, err := cursor.NewClientFromPath()
+	if err != nil {
+		t.Fatalf("NewClientFromPath: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	result, err := client.AskCtx(ctx, "Reply with exactly: PONG", &cursor.AskOptions{
+		Mode:  cursor.ModeAgent,
+		Trust: true,
+	})
+	if err != nil {
+		t.Fatalf("an explicit agent mode must reach the agent, not the flag parser: %v", err)
+	}
+	if !strings.Contains(result.Result, "PONG") {
+		t.Fatalf("result = %q", result.Result)
+	}
+}
+
 func TestRealAgentACPSession(t *testing.T) {
 	realAgentLane(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
