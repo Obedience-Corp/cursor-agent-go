@@ -37,6 +37,12 @@ type Client struct {
 	closeErr  error
 
 	stdin io.WriteCloser
+
+	// done is closed once the child has exited and waitErr has been set.
+	// Reading waitErr is only safe after done is closed; the close is the
+	// happens-before edge.
+	done    chan struct{}
+	waitErr error
 }
 
 // Start spawns cursor-agent acp and returns a client ready for Initialize.
@@ -67,7 +73,49 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	if handler == nil {
 		handler = DenyAll
 	}
-	return &Client{cmd: cmd, stdin: stdin, conn: newConn(stdin, stdout, handler)}, nil
+	c := &Client{
+		cmd:   cmd,
+		stdin: stdin,
+		conn:  newConn(stdin, stdout, handler),
+		done:  make(chan struct{}),
+	}
+	// One waiter owns cmd.Wait, because calling it twice is an error. It is
+	// also what lets a caller observe an exit it did not ask for: the process
+	// can die on its own, and without this the first sign of that is a failed
+	// request.
+	go func() {
+		c.waitErr = c.cmd.Wait()
+		close(c.done)
+	}()
+	return c, nil
+}
+
+// Done is closed when the cursor-agent process has exited, whether the caller
+// asked for that or not. Use it to notice a child that died on its own, rather
+// than discovering it on the next request.
+func (c *Client) Done() <-chan struct{} { return c.done }
+
+// PID is the process id of the running child, or zero once it has exited or if
+// it never started. A caller reporting a live process id should treat zero as
+// "no process", not as an unknown pid.
+func (c *Client) PID() int {
+	select {
+	case <-c.done:
+		return 0
+	default:
+	}
+	if c.cmd == nil || c.cmd.Process == nil {
+		return 0
+	}
+	return c.cmd.Process.Pid
+}
+
+// ExitErr reports how the process ended. It blocks until the child has exited,
+// so callers that only want to poll should select on Done first. A nil result
+// means a clean exit.
+func (c *Client) ExitErr() error {
+	<-c.done
+	return c.waitErr
 }
 
 func childEnv(extra []string) []string {
@@ -133,12 +181,16 @@ func (c *Client) Cancel(sessionID string) error {
 	return c.conn.notify("session/cancel", map[string]any{"sessionId": sessionID})
 }
 
-// Close shuts the session down and waits for the process to exit.
+// Close shuts the session down and waits for the process to exit. The child
+// does not exit zero when its stdin closes, and a context cancel kills it
+// outright, so a non-nil error here is usually just how it ended rather than a
+// failure to shut down.
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
 		_ = c.stdin.Close()
 		c.conn.shutdown(ErrClosed)
-		c.closeErr = c.cmd.Wait()
+		<-c.done
+		c.closeErr = c.waitErr
 	})
 	return c.closeErr
 }
