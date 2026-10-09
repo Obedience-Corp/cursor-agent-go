@@ -27,6 +27,7 @@ cursor-agent -p --output-format json --model <id> -- <prompt>
 | `--output-format json\|text\|stream-json` | `AskOptions.OutputFormat` (default `json`) |
 | `--stream-partial-output` | `StreamPartial` (requires `stream-json`) |
 | `--model` | `Model` |
+| `--model <model>[effort=<v>]` | `Effort`, merged into the model's bracket overrides (requires `Model`) |
 | `--mode plan\|ask` | `Mode` (`ModeAgent` and `ModeUnset` both render as no flag) |
 | `--force` / `--yolo` | `Force` / `Yolo` (requires `AllowDangerousMode`) |
 | `--auto-review` | `AutoReview` (opt-in only) |
