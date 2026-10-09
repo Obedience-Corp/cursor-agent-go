@@ -87,6 +87,13 @@ func main() {
 `Ask`/`AskCtx` always pass `-p --output-format json`. Force/yolo is rejected
 unless you go through `pkg/cursor/dangerous`.
 
+`AskOptions.Effort` sets reasoning effort. The CLI has no effort flag, so the SDK
+folds it into the model's bracket overrides: `Model: "claude-opus-4-8"` with
+`Effort: "high"` is sent as `--model claude-opus-4-8[effort=high]`. Existing
+overrides are kept (`m[context=1m]` becomes `m[context=1m,effort=high]`) and an
+existing `effort=` key is replaced. The CLI decides which values it accepts.
+`Effort` without `Model` fails validation.
+
 `AskResult.Usage` carries the CLI's real token counters (`inputTokens`,
 `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`); they are read off the
 wire, never estimated from cost.

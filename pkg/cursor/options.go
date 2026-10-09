@@ -27,7 +27,11 @@ const (
 
 // AskOptions configures a single print-mode run.
 type AskOptions struct {
-	Model              string
+	Model string
+	// Effort is folded into the Model's bracket overrides as effort=<value>.
+	// The CLI has no effort flag and decides which values it accepts. It
+	// requires Model.
+	Effort             string
 	Mode               Mode
 	Force              bool
 	Yolo               bool
@@ -62,6 +66,9 @@ func (o *AskOptions) validate() *Error {
 	}
 	if err := o.validateDangerous(); err != nil {
 		return err
+	}
+	if o.Effort != "" && o.Model == "" {
+		return validationError("Effort requires Model")
 	}
 	if err := validateMode(o.Mode); err != nil {
 		return err

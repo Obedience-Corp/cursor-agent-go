@@ -176,3 +176,45 @@ func TestAskOptionsCloneDoesNotShareSlices(t *testing.T) {
 		t.Fatal("clone shared backing arrays")
 	}
 }
+
+func TestModelWithEffort(t *testing.T) {
+	tests := []struct {
+		name, model, effort, want string
+	}{
+		{"model only", "claude-opus-4-8", "", "claude-opus-4-8"},
+		{"effort appended", "claude-opus-4-8", "high", "claude-opus-4-8[effort=high]"},
+		{"merge into brackets", "m[context=1m]", "high", "m[context=1m,effort=high]"},
+		{"replace existing effort", "m[context=1m,effort=low,fast=false]", "max", "m[context=1m,effort=max,fast=false]"},
+		{"only effort replaced", "m[effort=low]", "xhigh", "m[effort=xhigh]"},
+		{"duplicate effort collapsed", "m[effort=low,effort=medium]", "high", "m[effort=high]"},
+		{"empty brackets", "m[]", "high", "m[effort=high]"},
+		{"empty effort keeps brackets", "m[context=1m]", "", "m[context=1m]"},
+		{"spaces trimmed", "m[context=1m, effort=low]", "high", "m[context=1m,effort=high]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ModelWithEffort(tc.model, tc.effort); got != tc.want {
+				t.Fatalf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEffortInArgs(t *testing.T) {
+	opts := &AskOptions{Model: "m[context=1m]", Effort: "high"}
+	wantFlags := []string{"--model", "m[context=1m,effort=high]"}
+	if got := BuildPrintArgs("hi", opts); !slices.Equal(got[3:5], wantFlags) {
+		t.Fatalf("print args %v", got)
+	}
+	if got := BuildACPArgs(opts); !slices.Equal(got, append([]string{"acp"}, wantFlags...)) {
+		t.Fatalf("acp args %v", got)
+	}
+}
+
+func TestEffortWithoutModelIsValidationError(t *testing.T) {
+	err := (&AskOptions{Effort: "high"}).Validate()
+	sdkErr := requireCursorError(t, err, KindValidation)
+	if !strings.Contains(sdkErr.Message, "Effort requires Model") {
+		t.Fatalf("message %q", sdkErr.Message)
+	}
+}

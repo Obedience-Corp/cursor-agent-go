@@ -61,7 +61,7 @@ func printFlagArgs(opts *AskOptions) []string {
 	}
 	args := make([]string, 0, 12)
 	if opts.Model != "" {
-		args = append(args, "--model", opts.Model)
+		args = append(args, "--model", ModelWithEffort(opts.Model, opts.Effort))
 	}
 	// ModeAgent and ModeUnset both render as no flag: agent is the CLI
 	// default and "--mode agent" is rejected outright. See Mode.
@@ -133,4 +133,48 @@ func stripEnvKeys(env []string, keys ...string) []string {
 		out = append(out, entry)
 	}
 	return out
+}
+
+// ModelWithEffort returns model with effort=<effort> set in its bracket
+// overrides. An existing effort key is replaced and other overrides are kept.
+// An empty effort returns model unchanged.
+func ModelWithEffort(model, effort string) string {
+	if effort == "" {
+		return model
+	}
+	base, inner, ok := splitOverrides(model)
+	if !ok {
+		return model + "[effort=" + effort + "]"
+	}
+	parts := make([]string, 0, 4)
+	replaced := false
+	for _, part := range strings.Split(inner, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if key, _, _ := strings.Cut(part, "="); strings.TrimSpace(key) == "effort" {
+			if !replaced {
+				parts = append(parts, "effort="+effort)
+				replaced = true
+			}
+			continue
+		}
+		parts = append(parts, part)
+	}
+	if !replaced {
+		parts = append(parts, "effort="+effort)
+	}
+	return base + "[" + strings.Join(parts, ",") + "]"
+}
+
+func splitOverrides(model string) (base, inner string, ok bool) {
+	if !strings.HasSuffix(model, "]") {
+		return model, "", false
+	}
+	open := strings.Index(model, "[")
+	if open < 0 {
+		return model, "", false
+	}
+	return model[:open], model[open+1 : len(model)-1], true
 }

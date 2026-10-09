@@ -6,6 +6,11 @@ releases may include API changes.
 
 ## [Unreleased]
 
+### Added
+
+- `AskOptions.Effort` folds into the model's bracket overrides as `effort=<value>`
+  for print and ACP runs. `Effort` without `Model` fails validation.
+
 ## [0.2.0] - 2026-09-05
 
 ### Added
